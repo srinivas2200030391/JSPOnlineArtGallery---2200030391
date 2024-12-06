@@ -2,60 +2,100 @@ package com.klef.jfsd.OnlineArtGallery.services;
 
 import com.klef.jfsd.OnlineArtGallery.models.*;
 import com.klef.jfsd.OnlineArtGallery.repositories.*;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
-public class UserService {
+@RequiredArgsConstructor
+public class UserService implements UserDetailsService {
 
-    @Autowired
-    private CuratorRepo curatorRepo;
+    private final AdminRepo adminRepo;
+    private final CuratorRepo curatorRepo;
+    private final ArtistRepo artistRepo;
+    private final VisitorRepo visitorRepo;
 
-    @Autowired
-    private VisitorRepo visitorRepo;
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        // Check in each repository
+        Admin admin = adminRepo.findAdminByUsername(username);
+        if (admin != null) {
+            return createUserDetails(admin.getUsername(), admin.getPassword(), "ADMIN");
+        }
 
-    @Autowired
-    private AdminRepo adminRepo;
-
-    @Autowired
-    private ArtistRepo artistRepo;
-
-    public Map<String, Object> authenticateUser(String username, String password) {
         Curator curator = curatorRepo.findCuratorByName(username);
-        if (curator != null && curator.getPassword().equals(password)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("role", "curator");
-            response.put("user", curator);
-            return response;
+        if (curator != null) {
+            return createUserDetails(curator.getName(), curator.getPassword(), "CURATOR");
+        }
+
+        Artist artist = artistRepo.findArtistByUsername(username);
+        if (artist != null) {
+            return createUserDetails(artist.getUsername(), artist.getPassword(), "ARTIST");
         }
 
         Visitor visitor = visitorRepo.findVisitorByName(username);
-        if (visitor != null && visitor.getPassword().equals(password)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("role", "visitor");
-            response.put("user", visitor);
-            return response;
+        if (visitor != null) {
+            return createUserDetails(visitor.getName(), visitor.getPassword(), "VISITOR");
         }
 
+        throw new UsernameNotFoundException("User not found");
+    }
+
+    private UserDetails createUserDetails(String username, String password, String role) {
+        List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+        return new User(username, password, authorities);
+    }
+
+    public Map<String, Object> getUserDetails(String username) {
+        Map<String, Object> response = new HashMap<>();
+
+        // Check in each repository
         Admin admin = adminRepo.findAdminByUsername(username);
-        if (admin != null && admin.getPassword().equals(password)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("role", "admin");
+        if (admin != null) {
+            response.put("role", "ADMIN");
             response.put("user", admin);
             return response;
         }
 
+        Curator curator = curatorRepo.findCuratorByName(username);
+        if (curator != null) {
+            response.put("role", "CURATOR");
+            response.put("user", curator);
+            return response;
+        }
+
         Artist artist = artistRepo.findArtistByUsername(username);
-        if (artist != null && artist.getPassword().equals(password)) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("role", "artist");
+        if (artist != null) {
+            response.put("role", "ARTIST");
             response.put("user", artist);
             return response;
         }
 
+        Visitor visitor = visitorRepo.findVisitorByName(username);
+        if (visitor != null) {
+            response.put("role", "VISITOR");
+            response.put("user", visitor);
+            return response;
+        }
+
         return null;
+    }
+    public void createAdmin(String username, String password) {
+        Admin admin = new Admin();
+        admin.setUsername(username);
+        admin.setPassword(new BCryptPasswordEncoder(5).encode(password));
+
+        adminRepo.save(admin);
     }
 }
